@@ -259,13 +259,12 @@ export default {
     onPanelDragLeave(e) {
       if (!e || !e.currentTarget || !e.relatedTarget || !e.currentTarget.contains(e.relatedTarget)) {
         this.dropActive = false;
+        this.dragOverGroup = '';
       }
     },
-    // 把任务拖回待办池空白处：按来源分流，落到「未分组」或留在原清单。
-    //   清单文件内的任务：只清日期、留在原清单（该文件的分组由用户自己维护，不擅自搬动）
-    //   日记 / 收件箱来源：搬到收件箱「未分组」区（第一个 ### 之前），跨文件时自动清日期
-    // 任务对象优先用父级下发的 dragTask；若因 prop 传递滞后等原因取不到，
-    // 则从拖拽数据里取 guid 兜底。
+    // 把任务拖回待办池空白处：清除其日期（含跨日起始锚点 startAt），使其回到无日期池。
+    // 注意：这是改动前就有的行为，面板层不参与分组判定 —— 分组拖拽由 .tk-side-group 上的
+    // drop 单独处理，命中分组就不会走到这里（那边有 .stop）。保持原样以免影响基本功能。
     async onDropToPool(e) {
       let t = this.dragTask;
       if ((!t || !t.guid) && e && e.dataTransfer) {
@@ -275,21 +274,26 @@ export default {
       this.dropActive = false;
       this.$emit('drag-end');
       if (!t || !t.guid) return;
+      // 两步走，保证「拖到外层」永远至少完成原有行为：
+      //   1) updateTask 清日期 —— 你此前确认可用的逻辑
+      //   2) 再尝试搬到第一个 ### 之前（未分组）；这一步失败也不回滚第 1 步
+      // 清单文件内的任务只做第 1 步（留在原清单，分组由该文件自己维护）。
       const inList = String(t.guid).split('#')[0].indexOf('cl:') === 0;
       try {
-        if (inList) {
-          await Tasks.updateTask(t.guid, {
-            dueAt: null, dueAllDay: false, dueEndAt: null, startAt: null
-          });
-        } else {
-          await Tasks.moveTaskToGroup(t.guid, INBOX_KEY, '');
+        const saved = await Tasks.updateTask(t.guid, {
+          dueAt: null, dueAllDay: false, dueEndAt: null, startAt: null
+        });
+        if (!inList) {
+          try {
+            await Tasks.moveTaskToGroup((saved && saved.guid) || t.guid, INBOX_KEY, '');
+          } catch (e) {
+            console.warn('[DadaTodo] 移到「未分组」失败（日期已清除）：', e && e.message, e && e.reason);
+          }
         }
-        // 本地立即重读：池内移动是同一文件内的改写，不能只靠宿主的 refresh 广播
         await this.readClNoDate();
         this.$emit('saved');
       } catch (err) {
-        const failKey = inList ? 'app.clearDateFail' : 'app.moveFail';
-        this.$emit('error', this.$t(failKey) + (err && err.message || err));
+        this.$emit('error', this.$t('app.clearDateFail') + (err && err.message || err));
       }
     },
     /* ---------- 拖到某个分组：移动到该分组（收件箱内部重组 / 从日历或其它清单搬入） ---------- */
