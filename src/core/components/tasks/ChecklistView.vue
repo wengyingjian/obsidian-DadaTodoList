@@ -10,22 +10,34 @@
         </button>
       </div>
       <div v-if="!lists.length" class="tk-cl-side-empty">{{ $t('app.clSideEmpty') }}</div>
-      <div v-else class="tk-cl-list">
-        <div v-for="c in lists" :key="c.key" class="tk-cl-item" :data-href="taskFilePath(c.key) || ''">
-          <div class="tk-cl-item-main" :class="{ on: c.key === activeKey }"
-               role="button" tabindex="0"
-               @click="selectList(c.key)"
-               @keydown.enter.prevent="selectList(c.key)"
-               @keydown.space.prevent="selectList(c.key)">
-            <div class="tk-cl-name">{{ c.name }}</div>
-            <div class="tk-cl-bar"><i :style="{ width: pct(c) + '%' }"></i></div>
-            <div class="tk-cl-meta">{{ $t('app.clProgressPct', { done: c.done, total: c.total, pct: pct(c) }) }}</div>
-          </div>
-          <button class="tk-cl-open" type="button" :title="$t('app.openChecklistFile')" @click.stop="openFile(c.key)">
-            <i class="la la-external-link"></i>
-          </button>
-        </div>
+      <!-- 眼睛开着（仅显示待办）且清单全被折叠：不留一句「还没有清单」的误导，直接给展开入口 -->
+      <div v-else-if="!visibleLists.length" class="tk-cl-hidden tk-cl-hidden-all">
+        <span>{{ $t('app.clHiddenDone', { n: hiddenCount }) }}</span>
+        <button class="tk-cl-hidden-btn" type="button" @click="showAllLists">{{ $t('app.clShowAll') }}</button>
       </div>
+      <template v-else>
+        <div class="tk-cl-list">
+          <div v-for="c in visibleLists" :key="c.key" class="tk-cl-item" :data-href="taskFilePath(c.key) || ''">
+            <div class="tk-cl-item-main" :class="{ on: c.key === activeKey }"
+                 role="button" tabindex="0"
+                 @click="selectList(c.key)"
+                 @keydown.enter.prevent="selectList(c.key)"
+                 @keydown.space.prevent="selectList(c.key)">
+              <div class="tk-cl-name">{{ c.name }}</div>
+              <div class="tk-cl-bar"><i :style="{ width: pct(c) + '%' }"></i></div>
+              <div class="tk-cl-meta">{{ $t('app.clProgressPct', { done: c.done, total: c.total, pct: pct(c) }) }}</div>
+            </div>
+            <button class="tk-cl-open" type="button" :title="$t('app.openChecklistFile')" @click.stop="openFile(c.key)">
+              <i class="la la-external-link"></i>
+            </button>
+          </div>
+        </div>
+        <!-- 被折叠的已完成清单：始终留一行可点提示，避免用户以为清单被删 -->
+        <div v-if="hiddenCount" class="tk-cl-hidden">
+          <span>{{ $t('app.clHiddenDone', { n: hiddenCount }) }}</span>
+          <button class="tk-cl-hidden-btn" type="button" @click="showAllLists">{{ $t('app.clShowAll') }}</button>
+        </div>
+      </template>
     </aside>
 
     <!-- 右侧：选中清单的任务（按 ### 标题分组） -->
@@ -44,11 +56,20 @@
         <template v-else>
           <!-- 列表视图：分组纵向堆叠（默认，保留原样式） -->
           <div v-if="mainView === 'list'" class="tk-cl-body">
+            <!-- 空态两种含义分开：真的没有任务 → 引导落第一个任务；眼睛开着且已无待办 → 说明并给「显示全部」入口 -->
             <div v-if="!visibleGroups.length" class="tk-cl-none tk-cl-none-add">
-              <span>{{ $t('app.clEmpty') }}</span>
-              <button class="tk-add cl-eadd" type="button" :title="$t('app.addTask')" @click="openAdd({ title: '' })">
-                <i class="la la-plus-circle"></i>
-              </button>
+              <template v-if="activeTotal > 0 && pendingLeft === 0">
+                <span>{{ $t('app.clNoPending') }}</span>
+                <button class="tk-add cl-eadd" type="button" :title="$t('app.clShowAll')" @click="showAllLists">
+                  <i class="la la-eye"></i>
+                </button>
+              </template>
+              <template v-else>
+                <span>{{ $t('app.clEmpty') }}</span>
+                <button class="tk-add cl-eadd" type="button" :title="$t('app.addTask')" @click="openAdd({ title: '' })">
+                  <i class="la la-plus-circle"></i>
+                </button>
+              </template>
             </div>
             <div v-for="g in visibleGroups" :key="gKey(g)" class="tk-cl-group"
                  :class="{ 'tk-cl-drophover': dragOverTitle === g.title }"
@@ -83,11 +104,20 @@
 
           <!-- 分栏视图：每个分组一栏，固定宽度，多栏时横向滚动 -->
           <div v-else class="tk-cl-cols">
+            <!-- 空态两种含义分开：真的没有任务 → 引导落第一个任务；眼睛开着且已无待办 → 说明并给「显示全部」入口 -->
             <div v-if="!visibleGroups.length" class="tk-cl-none tk-cl-none-add">
-              <span>{{ $t('app.clEmpty') }}</span>
-              <button class="tk-add cl-eadd" type="button" :title="$t('app.addTask')" @click="openAdd({ title: '' })">
-                <i class="la la-plus-circle"></i>
-              </button>
+              <template v-if="activeTotal > 0 && pendingLeft === 0">
+                <span>{{ $t('app.clNoPending') }}</span>
+                <button class="tk-add cl-eadd" type="button" :title="$t('app.clShowAll')" @click="showAllLists">
+                  <i class="la la-eye"></i>
+                </button>
+              </template>
+              <template v-else>
+                <span>{{ $t('app.clEmpty') }}</span>
+                <button class="tk-add cl-eadd" type="button" :title="$t('app.addTask')" @click="openAdd({ title: '' })">
+                  <i class="la la-plus-circle"></i>
+                </button>
+              </template>
             </div>
             <div v-for="g in visibleGroups" :key="gKey(g)" class="tk-cl-col"
                  :class="{ 'tk-cl-drophover': dragOverTitle === g.title }"
@@ -151,8 +181,9 @@ export default {
     hideDone: { type: Boolean, default: false }
   },
   components: { TaskContextMenu },
-  // 新建成功后请父级重载清单列表（父级 checklists 属性更新后由 watcher 接手）
-  emits: ['reload'],
+  // 新建成功后请父级重载清单列表（父级 checklists 属性更新后由 watcher 接手）；
+  // show-all：请父级关掉顶栏眼睛（「显示全部」入口，hideDone 由父级持有并持久化）
+  emits: ['reload', 'show-all'],
   data() {
     return {
       lists: [],
@@ -173,6 +204,23 @@ export default {
     };
   },
   computed: {
+    // 左栏可见清单：眼睛开着（「仅显示待办」）时折叠「已无待办」的清单（全部完成 / 全部取消）。
+    // 空清单（total = 0）始终保留——新建后立刻从列表消失会让人以为没建成，且它正是落第一个任务的入口。
+    // cancelled 由 listChecklists 一并给出：只有 done 的话「1 完成 + 1 取消」这类清单会漏判（同样没有待办）。
+    visibleLists() {
+      if (!this.hideDone) return this.lists;
+      return this.lists.filter((c) => !(c.total > 0 && (c.done || 0) + (c.cancelled || 0) === c.total));
+    },
+    // 当前被折叠的清单数量（左栏提示行用）
+    hiddenCount() { return this.lists.length - this.visibleLists.length; },
+    // 当前清单里还剩多少条待办（未完成且未取消）：眼睛过滤后右区为空时，用来区分「空清单」与「已无待办」
+    pendingLeft() {
+      let n = 0;
+      for (const g of this.groups) {
+        for (const t of (g.tasks || [])) if (!t.completed && !t.cancelled) n++;
+      }
+      return n;
+    },
     // 隐藏已完成/已取消：仅显示真正的待办（未完成且未取消），并去掉因此变空的组
     visibleGroups() {
       // 稳定排序：未完成在上，已完成/已取消在下方；每组内保持原相对顺序
@@ -219,24 +267,24 @@ export default {
             this.pendingKey = '';
           }
         }
-        if (prevKey && this.lists.some((x) => x.key === prevKey)) {
+        // 选中项的可见性同样按 visibleLists 判断：眼睛开着时被折叠的清单不能再被选中，
+        // 否则右区会展示一个左栏里根本不存在的清单。
+        if (prevKey && this.visibleLists.some((x) => x.key === prevKey)) {
           // 当前选中项仍在：保留选中、同步名称，并重读当前清单的分组——
           // 右侧 groups / 统计是 loadGroups 读文件得到的本地数据，不随 lists 引用自动更新；
           // 缺这一步会导致手动改笔记后左侧刷新而右侧滞留旧数据
-          const c = this.lists.find((x) => x.key === prevKey);
+          const c = this.visibleLists.find((x) => x.key === prevKey);
           if (c) this.activeName = c.name;
           await this.loadGroups(prevKey);
-        } else if (this.lists.length) {
-          await this.selectList(this.lists[0].key);
+        } else if (this.visibleLists.length) {
+          await this.selectList(this.visibleLists[0].key);
         } else {
-          this.activeKey = '';
-          this.activeName = '';
-          this.groups = [];
-          this.activeTotal = 0;
-          this.activeDone = 0;
+          this.clearSelection();
         }
       }
-    }
+    },
+    // 眼睛切换可能把「当前选中」的清单折叠掉：自动改选第一个可见清单
+    hideDone() { this.ensureSelection(); }
   },
   beforeUnmount() {
     // 清掉「新建清单后延后重载」的定时器：视图已关闭时不该再向父级 emit
@@ -245,6 +293,22 @@ export default {
   },
   methods: {
     statusIcon, richSummaryNoTags, dateText, timeText, taskFilePath,
+    // 「显示全部」：请父级关掉顶栏眼睛（hideDone 由父级持有并持久化到 localStorage）
+    showAllLists() { this.$emit('show-all'); },
+    // 清空右区选中（没有可见清单时）
+    clearSelection() {
+      this.activeKey = '';
+      this.activeName = '';
+      this.groups = [];
+      this.activeTotal = 0;
+      this.activeDone = 0;
+    },
+    // 眼睛切换后保证「选中项」仍在可见清单里，否则改选第一个可见清单 / 清空右区
+    async ensureSelection() {
+      if (this.activeKey && this.visibleLists.some((x) => x.key === this.activeKey)) return;
+      if (this.visibleLists.length) { await this.selectList(this.visibleLists[0].key); return; }
+      this.clearSelection();
+    },
     pct(c) { return c.total ? Math.round((c.done / c.total) * 100) : 0; },
     // 与 loadChecklists() 同一排序（中文按拼音）：新建的清单落位与下次全量刷新后一致
     byName(a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN'); },
@@ -404,6 +468,19 @@ export default {
   padding: 28px 18px; color: var(--ink-soft); font-size: 12.5px; line-height: 1.7; text-align: center;
 }
 .tk-cl-list { flex: 1; overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+/* ===== 被折叠的已完成清单：留一行可点提示，避免用户以为清单被删 ===== */
+.tk-cl-hidden {
+  flex: none; display: flex; align-items: center; justify-content: center; gap: 4px; flex-wrap: wrap;
+  padding: 10px 12px; border-top: 1px solid var(--line);
+  color: var(--ink-soft); font-size: 11.5px; line-height: 1.5; text-align: center;
+}
+/* 所有清单都被折叠：提示块占满剩余高度、靠上对齐（替代「还没有清单」的空态） */
+.tk-cl-hidden-all { flex: 1; align-items: flex-start; padding-top: 28px; border-top: none; }
+.tk-cl-hidden-btn {
+  flex: none; border: none; background: transparent; padding: 0 2px; margin: 0;
+  color: var(--gold); font-family: inherit; font-size: 11.5px; line-height: 1.5; cursor: pointer;
+}
+.tk-cl-hidden-btn:hover { text-decoration: underline; }
 .tk-cl-item { display: flex; align-items: center; gap: 8px; }
 .tk-cl-item-main {
   flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 7px;

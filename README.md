@@ -71,6 +71,7 @@ tags:
 - **Indented checkboxes are subtasks**, nesting to any depth
 - Switch between **list / columns** layouts; **drag a task onto another group** to move it
 - Each group has a **+ button** to add tasks; the sidebar shows live total / done progress per checklist
+- The eye toggle ("hide done") also folds checklists that have **no pending tasks** into a hint line at the bottom of the sidebar ("N hidden · Show all"); empty checklists are never folded so they can take their first task
 - The **+ button** at the right of the "Checklist" list header creates a new checklist from just a name — it is saved to the `清单` folder at the vault root by default (configurable via the "Checklist folder" setting); a new empty checklist can take its first task via the + next to "Checklist is empty"
 
 ### Data access disclosure

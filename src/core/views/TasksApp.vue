@@ -65,7 +65,7 @@
       <!-- ===== 清单视图（左侧清单列表 + 右侧按 ### 标题分组） ===== -->
       <div v-else-if="view === 'cl'" key="cl" class="tk-clview-wrap">
         <checklist-view :plugin="plugin" :checklists="checklists" :hide-done="hideDone" :main-view="clMainView"
-                        @reload="reloadChecklists" />
+                        @reload="reloadChecklists" @show-all="toggleHideDone" />
       </div>
 
       <!-- ===== 列表视图（独立组件） ===== -->

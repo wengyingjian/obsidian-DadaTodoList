@@ -428,7 +428,16 @@ async function listChecklists() {
   for (const e of checklistFileEntries()) {
     const doc = await readTasks(e.path, e.key);
     const all = flattenTasks(doc.roots);
-    items.push({ key: e.key, name: e.name, total: all.length, done: all.filter((n) => n.completed).length });
+    // cancelled 一并给出：清单视图眼睛过滤时按「done + cancelled === total」判断「已无待办」，
+    // 只看 done 会漏掉「部分完成 + 部分取消」这类同样没有待办的清单
+    items.push({
+      key: e.key,
+      name: e.name,
+      total: all.length,
+      done: all.filter((n) => n.completed).length,
+      // 节点上的取消态是 cancelMark（- [-]）或 cancelled（❌ 日期串），两者独立，任一命中即取消
+      cancelled: all.filter((n) => n.cancelMark || n.cancelled).length
+    });
   }
   items.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
   return res(200, { ok: true, count: items.length, items });
