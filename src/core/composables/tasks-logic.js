@@ -383,6 +383,19 @@ export function isImeKey(e) {
   return !!e && (e.isComposing === true || e.keyCode === 229);
 }
 
+// 新建清单的名称校验（弹窗与数据层共用同一份规则，避免两处正则漂移）。
+// 合法返回 ''，否则返回原因码：'missing_name'（空）| 'bad_name'（文件名不可用）。
+// 规则：非空、不含路径分隔符与 Windows 非法字符 / 控制字符、非 Windows 保留名、不以点开头或结尾、长度上限。
+export function checklistNameError(name) {
+  const n = String(name == null ? '' : name).trim();
+  if (!n) return 'missing_name';
+  if (/[\\/:*?"<>|\x00-\x1f]/.test(n)) return 'bad_name';
+  if (n.startsWith('.') || n.endsWith('.')) return 'bad_name';
+  if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(n)) return 'bad_name';
+  if (n.length > 120) return 'bad_name';
+  return '';
+}
+
 // 标题 → 纯文本（用于 tooltip 等场景：链接只留文字）
 export function plainInline(text) {
   return stripMute(String(text == null ? '' : text))

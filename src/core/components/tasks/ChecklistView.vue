@@ -2,7 +2,13 @@
   <div class="tk-clview">
     <!-- 左侧：清单列表（固定 260px） -->
     <aside class="tk-cl-side">
-      <div class="tk-cl-side-h"><i class="la la-tasks"></i><span>{{ $t('app.viewCl') }}</span></div>
+      <div class="tk-cl-side-h">
+        <i class="la la-tasks"></i><span>{{ $t('app.viewCl') }}</span>
+        <!-- 新建清单：只要名称；按钮位置与样式对齐清单内「分组 + / 新建任务」 -->
+        <button class="tk-add cl-sadd" type="button" :title="$t('app.newChecklist')" @click="openNewChecklist">
+          <i class="la la-plus-circle"></i>
+        </button>
+      </div>
       <div v-if="!lists.length" class="tk-cl-side-empty">{{ $t('app.clSideEmpty') }}</div>
       <div v-else class="tk-cl-list">
         <div v-for="c in lists" :key="c.key" class="tk-cl-item" :data-href="taskFilePath(c.key) || ''">
@@ -38,7 +44,12 @@
         <template v-else>
           <!-- 列表视图：分组纵向堆叠（默认，保留原样式） -->
           <div v-if="mainView === 'list'" class="tk-cl-body">
-            <div v-if="!visibleGroups.length" class="tk-cl-none">{{ $t('app.clEmpty') }}</div>
+            <div v-if="!visibleGroups.length" class="tk-cl-none tk-cl-none-add">
+              <span>{{ $t('app.clEmpty') }}</span>
+              <button class="tk-add cl-eadd" type="button" :title="$t('app.addTask')" @click="openAdd({ title: '' })">
+                <i class="la la-plus-circle"></i>
+              </button>
+            </div>
             <div v-for="g in visibleGroups" :key="gKey(g)" class="tk-cl-group"
                  :class="{ 'tk-cl-drophover': dragOverTitle === g.title }"
                  @dragover.prevent="onDragOver($event, g.title)" @drop="onDrop($event, g.title)">
@@ -72,7 +83,12 @@
 
           <!-- 分栏视图：每个分组一栏，固定宽度，多栏时横向滚动 -->
           <div v-else class="tk-cl-cols">
-            <div v-if="!visibleGroups.length" class="tk-cl-none">{{ $t('app.clEmpty') }}</div>
+            <div v-if="!visibleGroups.length" class="tk-cl-none tk-cl-none-add">
+              <span>{{ $t('app.clEmpty') }}</span>
+              <button class="tk-add cl-eadd" type="button" :title="$t('app.addTask')" @click="openAdd({ title: '' })">
+                <i class="la la-plus-circle"></i>
+              </button>
+            </div>
             <div v-for="g in visibleGroups" :key="gKey(g)" class="tk-cl-col"
                  :class="{ 'tk-cl-drophover': dragOverTitle === g.title }"
                  @dragover.prevent="onDragOver($event, g.title)" @drop="onDrop($event, g.title)">
@@ -118,6 +134,7 @@ import { Tasks } from '../../composables/useTasks.js';
 import { taskFilePath } from '../../api/tasks.js';
 import { statusIcon, dateText, timeText, richSummaryNoTags } from '../../composables/tasks-logic.js';
 import { VueModal } from '../../ui/VueModal.js';
+import { ChecklistFormModal } from '../../ui/modals.js';
 import TaskEditorModal from '../TaskEditorModal.vue';
 import { openTaskInFile } from '../../utils/openTaskInFile.js';
 import { openCtxMenu } from '../../composables/useTaskCtxMenu.js';
@@ -134,6 +151,8 @@ export default {
     hideDone: { type: Boolean, default: false }
   },
   components: { TaskContextMenu },
+  // 新建成功后请父级重载清单列表（父级 checklists 属性更新后由 watcher 接手）
+  emits: ['reload'],
   data() {
     return {
       lists: [],
@@ -146,6 +165,11 @@ export default {
       error: '',
       dragGuid: '',        // 正在拖拽的任务 guid
       dragOverTitle: '',   // 当前拖拽悬停的分组标题（用于高亮）
+      // 刚新建、尚未被父级清单列表确认的清单：元数据缓存解析 frontmatter 有延迟，
+      // 期间靠这两项保住乐观条目与选中态，避免「刚建好就被重置成别的清单」
+      pendingKey: '',
+      pendingItem: null,
+      pendingAt: 0,
     };
   },
   computed: {
@@ -175,6 +199,26 @@ export default {
       async handler(cls) {
         const prevKey = this.activeKey;
         this.lists = (cls && cls.length) ? cls.slice() : [];
+        // 刚新建的清单可能还没进父级列表（metadataCache 解析新文件 frontmatter 有延迟）：
+        // 此时保留乐观条目与当前选中，等下一次重载再对齐——不要回落到 lists[0]，
+        // 否则用户刚建好的清单会被瞬间「换成」列表第一项。
+        // 退出条件三选一：已进父级列表 / 超过 5s（解析异常时不再无限保护）/ 文件已不在（被删或改名）。
+        if (this.pendingKey) {
+          const confirmed = this.lists.some((x) => x.key === this.pendingKey);
+          const expired = Date.now() - (this.pendingAt || 0) > 5000;
+          const path = this.taskFilePath(this.pendingKey);
+          const exists = !!(path && this.plugin.app.vault.getAbstractFileByPath(path));
+          if (confirmed || expired || !exists) {
+            this.pendingKey = '';
+            this.pendingItem = null;
+          } else {
+            if (this.pendingItem && !this.lists.some((x) => x.key === this.pendingItem.key)) {
+              this.lists = this.lists.concat([this.pendingItem]).sort((a, b) => this.byName(a, b));
+            }
+            if (prevKey === this.pendingKey) { await this.loadGroups(prevKey); return; }
+            this.pendingKey = '';
+          }
+        }
         if (prevKey && this.lists.some((x) => x.key === prevKey)) {
           // 当前选中项仍在：保留选中、同步名称，并重读当前清单的分组——
           // 右侧 groups / 统计是 loadGroups 读文件得到的本地数据，不随 lists 引用自动更新；
@@ -194,9 +238,50 @@ export default {
       }
     }
   },
+  beforeUnmount() {
+    // 清掉「新建清单后延后重载」的定时器：视图已关闭时不该再向父级 emit
+    for (const t of this._reloadTimers || []) clearTimeout(t);
+    this._reloadTimers = [];
+  },
   methods: {
     statusIcon, richSummaryNoTags, dateText, timeText, taskFilePath,
     pct(c) { return c.total ? Math.round((c.done / c.total) * 100) : 0; },
+    // 与 loadChecklists() 同一排序（中文按拼音）：新建的清单落位与下次全量刷新后一致
+    byName(a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN'); },
+    // 新建清单：只要名称 → 落盘成功后乐观插入左侧列表并选中，再请父级重载对齐
+    openNewChecklist() {
+      new ChecklistFormModal(this.plugin.app, {
+        onSubmit: async (name) => {
+          let item;
+          try {
+            item = await Tasks.createChecklist(name);
+          } catch (e) {
+            // 把 API 的 reason 翻成可读提示；弹窗收到 throw 会提示并保持打开
+            const reason = e && e.reason;
+            if (reason === 'exists') throw new Error(this.$t('app.clExists', { name }));
+            if (reason === 'exists_other') throw new Error(this.$t('app.clExistsOther', { name }));
+            if (reason === 'bad_folder') throw new Error(this.$t('app.clBadFolder'));
+            if (reason === 'bad_name') throw new Error(this.$t('app.clNameInvalid'));
+            if (reason === 'missing_name') throw new Error(this.$t('app.clNameRequired'));
+            throw new Error(this.$t('app.clCreateFail') + (reason || (e && e.message) || e));
+          }
+          this.pendingKey = item.key;
+          this.pendingItem = item;
+          this.pendingAt = Date.now();
+          const merged = this.lists.slice();
+          if (!merged.some((x) => x.key === item.key)) merged.push(item);
+          merged.sort((a, b) => this.byName(a, b));
+          this.lists = merged;
+          await this.selectList(item.key); // 文件已落盘，读到的是空分组 → 右侧显示「清单为空」
+          this.$emit('reload');
+          // frontmatter 解析稍晚才进 metadataCache：分两次延后重载（600ms / 1600ms）。
+          // 1600ms 那次兜住「首次 changed 事件落在 api 自写静默窗口内被跳过」的情况。
+          this._reloadTimers = (this._reloadTimers || []).concat([600, 1600].map((ms) => setTimeout(() => {
+            if (this.pendingKey) this.$emit('reload');
+          }, ms)));
+        }
+      }).open();
+    },
     gKey(g) { return g.title || '___ungrouped'; },
     firstLine(s) { return String(s || '').split(/\r?\n/)[0]; },
     async selectList(key) {
@@ -318,10 +403,12 @@ export default {
   background: var(--panel);
 }
 .tk-cl-side-h {
-  flex: none; display: flex; align-items: center; gap: 8px;
+  flex: none; display: flex; align-items: center; gap: 8px; min-width: 0;
   padding: 14px 16px; font-size: 14px; font-weight: 700; color: var(--ink);
   border-bottom: 1px solid var(--line);
 }
+/* 窄面板 / 英文界面下标题可省略，保证右侧「新建清单」按钮不被挤出可见区 */
+.tk-cl-side-h > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tk-cl-side-h i { color: var(--gold); font-size: 16px; }
 .tk-cl-side-empty {
   padding: 28px 18px; color: var(--ink-soft); font-size: 12.5px; line-height: 1.7; text-align: center;
@@ -366,6 +453,8 @@ export default {
 .tk-cl-prog { font-size: 12px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 
 .tk-cl-loading, .tk-cl-none { padding: 40px; text-align: center; color: var(--ink-soft); }
+/* 空清单：文案 + 「加任务」按钮同一行居中（新建的清单默认没有任何分组，这是落第一个任务的入口） */
+.tk-cl-none-add { display: flex; align-items: center; justify-content: center; gap: 2px; }
 .tk-cl-body { flex: 1; overflow: auto; padding: 4px 20px 28px; }
 
 .tk-cl-group { margin-top: 18px; }

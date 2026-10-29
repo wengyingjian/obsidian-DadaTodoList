@@ -31,3 +31,9 @@
   font-family: inherit;
 }
 
+/* 表单字段标签（原生 Modal 内、输入框上方；与 .mylife-input 配套） */
+.mylife-form-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 6px;
+}

@@ -40,6 +40,11 @@
 .task-app .tk-ag:hover .tk-ag-add { opacity: 1; }
 /* 清单分组标题：常驻可见并推到最右 */
 .task-app .tk-add.cl-gadd { margin-left: auto; opacity: 1; }
+/* 清单视图：左侧「清单」标题行的新建按钮、空清单的「加任务」按钮同样常驻可见
+   （标题行 / 空态没有 hover 容器，靠容器 hover 显形会永远看不见） */
+.task-app .tk-add.cl-sadd,
+.task-app .tk-add.cl-eadd { opacity: 1; }
+.task-app .tk-add.cl-eadd { margin-left: 4px; }
 
 /* ===== 标题行内富文本（v-html 注入，无 scoped 属性） ===== */
 .task-app .tk-inline-link {

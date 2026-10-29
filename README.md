@@ -71,6 +71,7 @@ tags:
 - **Indented checkboxes are subtasks**, nesting to any depth
 - Switch between **list / columns** layouts; **drag a task onto another group** to move it
 - Each group has a **+ button** to add tasks; the sidebar shows live total / done progress per checklist
+- The **+ button** at the right of the "Checklist" list header creates a new checklist from just a name — it is saved to the `清单` folder at the vault root by default (configurable via the "Checklist folder" setting); a new empty checklist can take its first task via the + next to "Checklist is empty"
 
 ### Data access disclosure
 
@@ -87,6 +88,7 @@ tags:
 | Journal folder | Folder holding your journals (dated tasks); the plugin scans it and subfolders for notes whose filename contains a date; default `/` means the vault root |
 | Journal load window | Load only the last N days of journals (30 / 90 / 180 / 365 / all; default all) — lower it on large vaults for better performance |
 | Inbox file | Where dateless tasks are stored (path relative to vault root); changing it offers to migrate existing tasks |
+| Checklist folder | Folder where newly created checklist files are stored (relative to vault root); default `清单`, empty means vault root. Affects new files only — existing checklists are still detected by tag anywhere in the vault |
 | Checklist file tag(s) | Notes whose frontmatter `tags` include any of these become checklist files; multiple allowed |
 | Week starts on | First column of the week view and month calendar; Sunday through Saturday, default Monday |
 | Timeline display range | Start and end hours of the timeline view (0:00 – 24:00) to focus on the hours you use |

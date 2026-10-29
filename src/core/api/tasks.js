@@ -10,7 +10,7 @@ import {
   INBOX_KEY, CHILD_INDENT,
   parseTasks, toRecord, serializeBlock, serializeTaskLine,
   nodeFromTask, locateNode, collectLineNos, todayKey, parseGuid, msToTime, dateToMs, flattenTasks,
-  priorityRank
+  priorityRank, checklistNameError
 } from '../composables/tasks-logic.js';
 
 let plugin = null;
@@ -31,7 +31,7 @@ const listNameOf = (k) => listRelOf(k).split('/').pop();
 
 // ---------- 数据位置解析 ----------
 
-const normFolder = (p) => String(p || '').replace(/^\/+|\/+$/g, '');
+const normFolder = (p) => String(p || '').trim().replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\/+|\/+$/g, '');
 
 // 取核心「日记 / Daily Notes」内部插件实例；非硬依赖，异常或缺失时返回 null。
 function legacyDailyNotesInstance() {
@@ -133,6 +133,18 @@ function checklistTags() {
   const s = plugin.settings && plugin.settings.checklistTags;
   const arr = Array.isArray(s) ? s.map((x) => String(x).trim()).filter(Boolean) : [];
   return arr.length ? arr : ['todoList'];
+}
+
+// 新建清单文件的存放文件夹（设置项 checklistFolder，默认「清单」；''/'/' = 库根）。
+// 只影响「新建」落点：已存在的清单仍按 checklistTags 全库识别，与目录无关。
+// 含 . / .. 段（越级）时返回 null，由调用方按「文件夹设置不可用」拒绝——否则拼出的 key
+// 会与真实文件路径不同源（taskFilePath 也会拒绝 ..），造出打不开的幽灵清单项。
+function checklistFolder() {
+  const raw = plugin.settings && plugin.settings.checklistFolder;
+  if (typeof raw !== 'string') return '清单';
+  const f = normFolder(raw);
+  if (f && f.split('/').some((seg) => seg === '.' || seg === '..')) return null;
+  return f;
 }
 
 // 收件箱文件不存在时创建（含 frontmatter），启动时调用
@@ -420,6 +432,40 @@ async function listChecklists() {
   }
   items.sort((a, b) => a.name.localeCompare(b.name, 'zh-Hans-CN'));
   return res(200, { ok: true, count: items.length, items });
+}
+
+// 新建清单文件：只要名称。存放位置由 checklistFolder 决定（默认 清单/<名称>.md），
+// 正文只写清单标记 frontmatter（分组 ### 由用户后续自行维护）。
+// 校验全部在写文件之前：空名 / 非法名 / 文件夹设置不可用 → 400，重名 → 409（绝不覆盖用户笔记）。
+export async function createChecklist(name) {
+  const n = String(name == null ? '' : name).trim();
+  const nameErr = checklistNameError(n);
+  if (nameErr) return res(400, { ok: false, reason: nameErr });
+  const folder = checklistFolder();
+  if (folder == null) return res(400, { ok: false, reason: 'bad_folder' });
+  const rel = folder ? `${folder}/${n}` : n;
+  const path = `${rel}.md`;
+  const v = vault();
+  if (v.getAbstractFileByPath(path)) return res(409, { ok: false, reason: 'exists' });
+  // 库内已有同名清单（可能在别的目录）：侧栏只显示文件名，重名会变成两个看不出区别的条目，
+  // 建之前就挡住，并回传已存在文件的路径，让提示能说清是哪一份。
+  const same = checklistFileEntries().find((e) => e.name === n && e.path !== path);
+  if (same) return res(409, { ok: false, reason: 'exists_other', path: same.path });
+  // 清单标记取第一个即可（识别时任一命中，写一个足够）；含 YAML 特殊字符时加引号，避免被解析成非字符串
+  const tag = String(checklistTags()[0] || 'todoList');
+  const tagYaml = /^[A-Za-z0-9_\-/.]+$/.test(tag) ? tag : JSON.stringify(tag);
+  const head = `---\ntags:\n  - ${tagYaml}\n---\n\n`;
+  noteSelfWrite();
+  await ensureFolder(folder);
+  try {
+    await v.create(path, head);
+  } catch (e) {
+    // 并发 / 文件树缓存未就绪导致的 already exists：按「已存在」上报，不覆盖
+    if (/already exists/i.test(e && e.message || '')) return res(409, { ok: false, reason: 'exists' });
+    throw e;
+  }
+  const key = CL_PREFIX + rel;
+  return res(201, { ok: true, key, path, item: { key, name: n, total: 0, done: 0 } });
 }
 
 // 读取一个任务文件并按 ### 三级标题分组（清单与收件箱共用）。

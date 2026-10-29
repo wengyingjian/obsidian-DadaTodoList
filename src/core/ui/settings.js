@@ -282,6 +282,20 @@ export class DadaTodoSettingTab extends PluginSettingTab {
           new MarkdownFileSuggest(app, tx.inputEl, (path) => this.handleInboxPathChange(path));
         });
       }),
+      row('checklistFolder', 'checklistFolderDesc', (s) => {
+        s.addText((tx) => {
+          tx.setPlaceholder('/');
+          tx.setValue(plugin.settings.checklistFolder || '/');
+          const apply = (value) => {
+            // 空 / '/' 都表示库根（与「日记文件夹」同一约定）；只影响「新建清单」的落点
+            const v = String(value || '').trim().replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\/+|\/+$/g, '');
+            plugin.settings.checklistFolder = v || '/';
+            plugin.saveSettings();
+          };
+          tx.onChange(apply);
+          new FolderSuggest(app, tx.inputEl, (path) => apply(path));
+        });
+      }),
       row('checklistTag', 'checklistTagDesc', (s) => {
         // 多标签编辑器：回车添加 → 胶囊展示，× 移除
         const editor = s.controlEl.createDiv('dt-tags-editor');

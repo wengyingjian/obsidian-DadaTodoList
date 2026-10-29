@@ -197,6 +197,13 @@ export default class DadaTodoPlugin extends Plugin {
       addDoneDateMarker: data.addDoneDateMarker ?? true,
       // 无日期任务的存放文件（相对库根目录）
       inboxFile: data.inboxFile || 'DadaTodoList.md',
+      // 新建清单文件的存放文件夹（相对库根目录）：默认「清单」；空串 / '/' 表示库根（与「日记文件夹」同一约定）。
+      // 只决定「新建」落点；已存在的清单仍按 frontmatter 标签全库识别，与目录无关。
+      checklistFolder: (() => {
+        const v = data.checklistFolder;
+        if (typeof v !== 'string') return '清单';
+        return v.trim().replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/^\/+|\/+$/g, '') || '/';
+      })(),
       // 日记（有日期任务）所在文件夹：相对库根目录，默认 '/' = 库根；扫描其及子目录下文件名含日期的笔记
       journalFolder: data.journalFolder || '/',
       // 日记文件宽松匹配：默认开；开启时从文件名任意位置抽取日期（兼容各种个性化命名），

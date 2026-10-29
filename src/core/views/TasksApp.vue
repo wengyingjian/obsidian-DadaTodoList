@@ -64,7 +64,8 @@
 
       <!-- ===== 清单视图（左侧清单列表 + 右侧按 ### 标题分组） ===== -->
       <div v-else-if="view === 'cl'" key="cl" class="tk-clview-wrap">
-        <checklist-view :plugin="plugin" :checklists="checklists" :hide-done="hideDone" :main-view="clMainView" />
+        <checklist-view :plugin="plugin" :checklists="checklists" :hide-done="hideDone" :main-view="clMainView"
+                        @reload="reloadChecklists" />
       </div>
 
       <!-- ===== 列表视图（独立组件） ===== -->
@@ -450,6 +451,11 @@ export default {
       }
       catch (e) { this.error = this.$t('app.loadTasksFail') + (e && e.message || e); }
       finally { if (!silent) this.loading = false; }
+    },
+    // 只刷新清单列表（清单视图新建清单后调用）：不走 loadAll，避免每次新建都全库重扫日记 / 收件箱
+    async reloadChecklists() {
+      try { this.checklists = await Tasks.loadChecklists(); }
+      catch (e) { this.error = this.$t('app.loadTasksFail') + (e && e.message || e); }
     },
     // ---------- 首次使用引导 ----------
     // 任务池为空且未关闭过时显示

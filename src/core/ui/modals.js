@@ -1,5 +1,6 @@
 import { Modal, Notice, Setting } from 'obsidian';
 import { t } from '../i18n/index.js';
+import { isImeKey, checklistNameError } from '../composables/tasks-logic.js';
 
 // ============================================================================
 // Obsidian 原生 Modal 辅助
@@ -97,6 +98,76 @@ export class ConfirmModal extends Modal {
           if (cb) cb();
         });
       });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+/**
+ * 新建清单弹窗（只要名称）。
+ * 落盘由调用方在 onSubmit 里完成：成功才关窗，失败（重名/非法名/写盘错误）
+ * 由 onSubmit 抛 Error，这里 Notice 提示并保持弹窗打开，让用户改个名字重试。
+ */
+export class ChecklistFormModal extends Modal {
+  /** @param {(name: string) => Promise<void>} opts.onSubmit 成功返回、失败抛 Error */
+  constructor(app, { onSubmit } = {}) {
+    super(app);
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    this.modalEl.addClass('mylife-form-modal');
+    this.titleEl.setText(t('app.clCreateTitle'));
+
+    const inputId = 'dada-cl-name-' + Date.now();
+    contentEl.createEl('label', { cls: 'mylife-form-label', text: t('app.clName'), attr: { for: inputId } });
+    const input = contentEl.createEl('input', { cls: 'mylife-input', type: 'text', attr: { id: inputId } });
+    input.placeholder = t('app.clNamePh');
+
+    let submitBtn = null;
+    let busy = false;
+    const submit = async () => {
+      if (busy) return;
+      const name = String(input.value || '').trim();
+      // 与数据层共用同一份校验规则（tasks-logic.checklistNameError）
+      const nameErr = checklistNameError(name);
+      if (nameErr) {
+        new Notice(nameErr === 'missing_name' ? t('app.clNameRequired') : t('app.clNameInvalid'));
+        input.focus();
+        return;
+      }
+      busy = true;
+      if (submitBtn) submitBtn.setDisabled(true);
+      try {
+        await this.onSubmit(name);
+        this.close();
+      } catch (e) {
+        new Notice((e && e.message) || t('app.clCreateFail'));
+      } finally {
+        busy = false;
+        if (submitBtn) submitBtn.setDisabled(false);
+      }
+    };
+
+    // 输入法组字中的回车只上屏候选词，不提交（与仓库内其它表单一致）
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || isImeKey(e)) return;
+      e.preventDefault();
+      submit();
+    });
+
+    new Setting(contentEl)
+      .addButton((b) => b.setButtonText(t('common.cancel')).onClick(() => this.close()))
+      .addButton((b) => {
+        submitBtn = b;
+        b.setButtonText(t('common.create')).setCta().onClick(() => submit());
+      });
+
+    setTimeout(() => input.focus(), 50);
   }
 
   onClose() {

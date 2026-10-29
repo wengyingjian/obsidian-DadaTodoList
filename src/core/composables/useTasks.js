@@ -3,7 +3,7 @@
 import { t } from '../i18n/index.js';
 import {
   loadAll, loadChecklists, loadByList, loadByDate, getDetail,
-  loadChecklistGroups, loadInboxGroups,
+  loadChecklistGroups, loadInboxGroups, createChecklist,
   createTask, createChecklistTask, updateTask, deleteTask, toggleTask, setChecklistStatus, createSubtask, listSubtasks,
   moveChecklistTask, moveTaskToGroup
 } from '../api/tasks.js';
@@ -47,6 +47,8 @@ const api = {
   async loadByList(listKey) { return (await unwrap(loadByList(listKey))).items || []; },
   async loadChecklistGroups(listKey) { return await unwrap(loadChecklistGroups(listKey)); },
   async loadInboxGroups() { return await unwrap(loadInboxGroups()); },
+  // 新建清单（只要名称）：返回 { key:'cl:相对路径', name, total:0, done:0 }，形状与 loadChecklists 的项一致
+  async createChecklist(name) { return (await unwrap(createChecklist(name))).item; },
   async loadByDate(dateKey) { return (await unwrap(loadByDate(dateKey))).items || []; },
   async getDetail(guid) {
     const items = await this.loadByDate(String(guid || '').split('#')[0]);
