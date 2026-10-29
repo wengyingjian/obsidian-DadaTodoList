@@ -3,9 +3,9 @@
 import { t } from '../i18n/index.js';
 import {
   loadAll, loadChecklists, loadByList, loadByDate, getDetail,
-  loadChecklistGroups,
+  loadChecklistGroups, loadInboxGroups,
   createTask, createChecklistTask, updateTask, deleteTask, toggleTask, setChecklistStatus, createSubtask, listSubtasks,
-  moveChecklistTask
+  moveChecklistTask, moveTaskToGroup
 } from '../api/tasks.js';
 
 // ---------- 纯函数 ----------
@@ -46,6 +46,7 @@ const api = {
   async loadChecklists() { return (await unwrap(loadChecklists())).items || []; },
   async loadByList(listKey) { return (await unwrap(loadByList(listKey))).items || []; },
   async loadChecklistGroups(listKey) { return await unwrap(loadChecklistGroups(listKey)); },
+  async loadInboxGroups() { return await unwrap(loadInboxGroups()); },
   async loadByDate(dateKey) { return (await unwrap(loadByDate(dateKey))).items || []; },
   async getDetail(guid) {
     const items = await this.loadByDate(String(guid || '').split('#')[0]);
@@ -61,7 +62,11 @@ const api = {
   async setChecklistStatus(guid, status) { return (await unwrap(setChecklistStatus(guid, status))).task; },
   async listSubtasks(parentGuid) { return (await unwrap(listSubtasks(parentGuid))).items || []; },
   async createSubtask(parentGuid, task) { return (await unwrap(createSubtask(parentGuid, task))).task; },
-  async moveChecklistTask(listKey, guid, targetGroupTitle) { return await unwrap(moveChecklistTask(listKey, guid, targetGroupTitle)); }
+  async moveChecklistTask(listKey, guid, targetGroupTitle) { return await unwrap(moveChecklistTask(listKey, guid, targetGroupTitle)); },
+  // 移动到指定文件的分组（收件箱 / 清单通用；跨文件时清日期，落到无日期待办）
+  async moveTaskToGroup(guid, targetKey, targetGroupTitle) {
+    return await unwrap(moveTaskToGroup(guid, targetKey, targetGroupTitle));
+  }
 };
 
 // 聚合命名空间导出，供组件以 Tasks.xxx 调用

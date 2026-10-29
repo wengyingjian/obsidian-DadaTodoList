@@ -14,8 +14,8 @@
         :handlers="tlHandlers"
         :is-week="view === 'four'" />
 
-      <!-- 右侧待办池：默认展开，可拖到日历改期，也可把日历任务拖回（清除日期） -->
-      <todo-side-panel :open="todoPanelOpen" :tasks="tasks" :checklists="checklists"
+      <!-- 右侧待办池：默认展开，可拖到日历改期，也可把日历任务拖回（清除日期 / 归入某个分组） -->
+      <todo-side-panel :open="todoPanelOpen" :checklists="checklists"
                        :drag-guid="dragGuid" :drag-task="dragTask"
                        @toggle-panel="$emit('toggle-panel')"
                        @open-task="(t, e) => $emit('open-task', t, e)"

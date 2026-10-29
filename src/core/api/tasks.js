@@ -331,7 +331,13 @@ async function ensureFolder(pathWithoutFile) {
   for (const seg of pathWithoutFile.split('/')) {
     if (!seg) continue;
     cur = cur ? `${cur}/${seg}` : seg;
-    if (!v.getAbstractFileByPath(cur)) await v.createFolder(cur);
+    if (v.getAbstractFileByPath(cur)) continue;
+    try {
+      await v.createFolder(cur);
+    } catch (e) {
+      // 启动早期缓存未就绪时「已存在的文件夹」会被判成不存在，createFolder 抛 already exists：视为幂等成功
+      if (!/already exists/i.test(e && e.message || '')) throw e;
+    }
   }
 }
 
@@ -342,8 +348,13 @@ async function ensureTaskFile(dateKey, path) {
   if (v.getAbstractFileByPath(path)) return true;
   const tmpl = await dailyTemplateContent();
   await ensureFolder(path.split('/').slice(0, -1).join('/'));
-  // 有模板则整份复制（frontmatter + 正文都生效）；无模板则退化为最小 frontmatter
-  await v.create(path, tmpl ? tmpl + '\n' : DAILY_HEAD);
+  try {
+    // 有模板则整份复制（frontmatter + 正文都生效）；无模板则退化为最小 frontmatter
+    await v.create(path, tmpl ? tmpl + '\n' : DAILY_HEAD);
+  } catch (e) {
+    // 启动早期缓存未就绪时，上面的「存在即返回」可能漏检，create 抛 already exists：幂等成功
+    if (!/already exists/i.test(e && e.message || '')) throw e;
+  }
   return true;
 }
 
@@ -411,19 +422,18 @@ async function listChecklists() {
   return res(200, { ok: true, count: items.length, items });
 }
 
-// 读取单个清单，并按 ### 三级标题分组（清单文件支持用 ### 标题 作为分组分隔）。
-// 任务归属到其之前最近的一个 ### 标题；标题前的任务归入「未分组」。
-export async function loadChecklistGroups(listKey) {
-  const path = taskFilePath(listKey);
-  if (!path) return res(400, { ok: false, reason: 'bad_list' });
-  const doc = await readTasks(path, listKey);
+// 读取一个任务文件并按 ### 三级标题分组（清单与收件箱共用）。
+// 任务归属到其之前最近的一个 ### 标题；标题前的任务归入「未分组」（title = ''）。
+// 返回文件内全部任务（不过滤日期 / 完成态），过滤交由视图层按各自场景处理。
+async function readGrouped(path, key, name) {
+  const doc = await readTasks(path, key);
   // 收集 ### 标题的行号与文字（仅三级标题，与用户约定一致）
   const headings = [];
   doc.lines.forEach((line, idx) => {
     const m = /^###\s+(.+?)\s*$/.exec(line);
     if (m) headings.push({ lineNo: idx, title: m[1].trim() });
   });
-  const records = flattenTasks(doc.roots).map((n) => toRecord(listKey, n));
+  const records = flattenTasks(doc.roots).map((n) => toRecord(key, n));
   const titled = headings.map((h) => ({ title: h.title, tasks: [] }));
   const ungrouped = [];
   for (const t of records) {
@@ -440,7 +450,24 @@ export async function loadChecklistGroups(listKey) {
   if (ungrouped.length) groups.push(sortGroup({ title: '', tasks: ungrouped }));
   groups.push(...titled.map(sortGroup));
   const done = records.filter((t) => t.completed && !t.cancelled).length;
-  return res(200, { ok: true, key: listKey, name: listNameOf(listKey), groups, total: records.length, done });
+  return { name, groups, total: records.length, done };
+}
+
+// 读取单个清单，并按 ### 三级标题分组（清单文件支持用 ### 标题 作为分组分隔）。
+export async function loadChecklistGroups(listKey) {
+  const path = taskFilePath(listKey);
+  if (!path) return res(400, { ok: false, reason: 'bad_list' });
+  const g = await readGrouped(path, listKey, listNameOf(listKey));
+  return res(200, Object.assign({ ok: true, key: listKey }, g));
+}
+
+// 收件箱按 ### 分组读取：与清单同一套分组规则，供待办池「独立事项」分组展示。
+// 「独立事项」原先只是聚合结果上的 filter（拿不到 ### 行号），故单独提供此读取入口。
+export async function loadInboxGroups() {
+  const path = inboxPath();
+  const name = String(path).split('/').pop().replace(/\.md$/i, '');
+  const g = await readGrouped(path, INBOX_KEY, name);
+  return res(200, Object.assign({ ok: true, key: INBOX_KEY }, g));
 }
 async function listTasks(opts = {}) {
   let files;
@@ -576,6 +603,68 @@ export async function createChecklistTask(listKey, groupTitle, task) {
   await writeTasks(path, doc.head, lines);
   const created = Object.assign({}, node, { lineNo: insertAt });
   return res(201, { ok: true, task: toRecord(listKey, created) });
+}
+
+// 把任务整块移动到目标文件（收件箱或清单）的指定 ### 分组末尾。
+// 跨文件时同步清空日期标记，落到「无日期待办」语义（与拖回待办池的行为一致）。
+// 分组不存在时在写任何文件之前返回 404，避免源任务已被删而目标落空。
+export async function moveTaskToGroup(guid, targetKey, groupTitle) {
+  noteSelfWrite();
+  const g = parseGuid(guid);
+  if (!g) return res(400, { ok: false, reason: 'bad_guid' });
+  if (targetKey !== INBOX_KEY && !isListKey(targetKey)) return res(400, { ok: false, reason: 'bad_list' });
+  const srcPath = pathOf(g);
+  const dstPath = taskFilePath(targetKey);
+  if (!srcPath || !dstPath) return res(400, { ok: false, reason: 'bad_guid' });
+
+  const src = await readTasks(srcPath, g.dateKey);
+  const node = locateNode(src.roots, { lineNo: g.lineNo });
+  if (!node) return res(404, { ok: false, reason: 'not_found' });
+  const removed = new Set(collectLineNos(node));
+  const sameFile = srcPath === dstPath;
+
+  // 目标文件内容（同文件时用「已删源块」的结果，避免二次读取）
+  let dstHead, dstLines;
+  if (sameFile) {
+    dstHead = src.head;
+    dstLines = src.lines.filter((_, i) => !removed.has(i));
+  } else {
+    await ensureTaskFile(targetKey, dstPath);
+    const dst = await readTasks(dstPath, targetKey);
+    dstHead = dst.head;
+    dstLines = dst.lines.slice();
+  }
+
+  // 插入位置：与 createChecklistTask / moveChecklistTask 同规则
+  const headings = [];
+  dstLines.forEach((line, idx) => {
+    const m = /^###\s+(.+?)\s*$/.exec(line);
+    if (m) headings.push({ idx, title: m[1].trim() });
+  });
+  let insertAt;
+  if (!groupTitle) {
+    insertAt = headings.length ? headings[0].idx : dstLines.length;
+  } else {
+    const h = headings.find((x) => x.title === groupTitle);
+    if (!h) return res(404, { ok: false, reason: 'group_not_found' });
+    const next = headings.find((x) => x.idx > h.idx);
+    insertAt = next ? next.idx : dstLines.length;
+  }
+  // 目标位置前若只有空行，回退到最后一个非空行之后：避免任务与同组内容被空行隔开
+  while (insertAt > 0 && !dstLines[insertAt - 1].trim()) insertAt--;
+
+  // 跨文件：清掉日期标记，使任务在目标文件里表现为「无日期」
+  if (!sameFile) {
+    node.due = '';
+    node.start = '';
+    node.time = '';
+    node.timeEnd = '';
+  }
+
+  dstLines.splice(insertAt, 0, ...serializeBlock(node, node.indentStr || ''));
+  if (!sameFile) await writeTasks(srcPath, src.head, src.lines.filter((_, i) => !removed.has(i)));
+  await writeTasks(dstPath, dstHead, dstLines);
+  return res(200, { ok: true, task: toRecord(targetKey, Object.assign({}, node, { lineNo: insertAt })) });
 }
 
 // 将清单内任务移动到另一个分组（同文件内移动整块：删旧块 + 插入到目标分组末尾）。

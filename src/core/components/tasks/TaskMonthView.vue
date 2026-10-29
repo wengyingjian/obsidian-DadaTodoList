@@ -76,7 +76,7 @@
       </div>
       </div>
       <!-- 右侧待办池：默认展开，可拖到日历改期，也可把日历任务拖回（清除日期） -->
-      <todo-side-panel :open="ctx.todoPanelOpen" :tasks="ctx.tasks" :checklists="ctx.checklists"
+      <todo-side-panel :open="ctx.todoPanelOpen" :checklists="ctx.checklists"
                        :drag-guid="ctx.dragGuid" :drag-task="ctx.dragTask" @toggle-panel="ctx.closeTodoPanel" @open-task="ctx.onTaskClick"
                        @drag-start="ctx.onDragStart" @drag-end="ctx.onDragEnd" @rich-click="ctx.onRichClick"
                        @saved="ctx.onSaved" @error="ctx.setError" />
