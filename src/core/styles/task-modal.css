@@ -173,6 +173,13 @@
   outline: none;
   border-color: var(--gold);
 }
+/* 原生 <select>：Obsidian 主题会给它固定 height（--input-height），与 8px 上下内边距叠加
+   会把文字压扁裁掉（表现为「高度不够、文字展示不全」），这里显式放开高度并给最小高度 */
+.tk-field select { height: auto; min-height: 34px; line-height: 1.4; }
+
+/* 归属选择（任务编辑器 chip / 移动弹窗共用）：两列等宽，去掉字段自带的 12px 下边距 */
+.tk-loc-row { display: flex; gap: 10px; }
+.tk-loc-row .tk-field { flex: 1 1 0; min-width: 0; margin-bottom: 0; }
 .tk-err {
   color: var(--el-color-danger, var(--text-error));
   font-size: 13px;

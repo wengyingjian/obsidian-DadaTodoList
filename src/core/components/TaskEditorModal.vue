@@ -4,48 +4,13 @@
       <button class="tk-close" @click="close"><i class="la la-times"></i></button>
       <div class="tk-modal-head">
         <h3 class="tk-modal-title">{{ editing ? $t('editor.editTitle') : $t('editor.newTitle') }}</h3>
-        <!-- 所在清单 / 分组：只读展示（从日历、列表点开也能知道任务在哪），点击展开移动面板 -->
-        <span v-if="showLoc" class="tk-loc-chip" :class="{ on: locPanel }" :title="locTip" @click="toggleLocPanel">
-          <i class="la" :class="locIcon"></i>{{ locChipText }}
+        <!-- 所在清单 / 分组：点 chip 直接打开「移动任务」弹窗（改归属不占主弹窗高度） -->
+        <span v-if="showLoc" class="tk-loc-chip" :title="locTip" @click="openMoveModal">
+          <i class="la" :class="locIcon"></i>{{ locChipText }}<i class="la la-angle-down tk-loc-caret"></i>
         </span>
-        <button v-if="showLoc" class="btn btn-icon" type="button" :class="{ on: locPanel }"
-                :title="$t('editor.locMoveTip')" @click="toggleLocPanel">
-          <i class="la la-exchange"></i>
-        </button>
         <button v-if="editing" class="btn btn-icon" type="button" v-tooltip="$t('editor.openFileTip')" @click="openFile">
           <i class="la la-external-link"></i>
         </button>
-      </div>
-      <!-- 归属面板：清单 + 分组。编辑态点「移动」立即落盘；新建态只记录目标，保存时直接建到该清单 -->
-      <div v-if="showLoc && locPanel" class="tk-loc-panel">
-        <div class="tk-loc-row">
-          <label class="tk-field">
-            <span>{{ $t('editor.locListLbl') }}</span>
-            <select v-model="locKey" :disabled="locBusy" @change="onLocChange">
-              <option v-if="!editing" value="">{{ $t('editor.locAuto') }}</option>
-              <option v-if="locIsOrigDate" :value="origLocKey">{{ $t('editor.locDiary', { date: origLocKey }) }}</option>
-              <option v-if="locKeyOrphan" :value="origLocKey">{{ $t('editor.locList', { name: locListName || origLocKey }) }}</option>
-              <option :value="inboxKey">{{ $t('editor.locInbox') }}</option>
-              <option v-for="c in assignLists" :key="c.key" :value="c.key">{{ c.name }}</option>
-            </select>
-          </label>
-          <label class="tk-field">
-            <span>{{ $t('editor.locGroupLbl') }}</span>
-            <select v-model="locGroup" :disabled="locBusy || !locCanPickGroups">
-              <option value="">{{ $t('app.ungrouped') }}</option>
-              <option v-for="g in groupOptions" :key="g" :value="g">{{ g }}</option>
-            </select>
-          </label>
-        </div>
-        <div class="tk-loc-ops">
-          <span v-if="locMsg" class="tk-loc-msg"><i class="la la-check"></i>{{ locMsg }}</span>
-          <span class="spacer"></span>
-          <button class="btn" type="button" :disabled="locBusy" @click="closeLocPanel">{{ $t('common.cancel') }}</button>
-          <button class="btn btn-gold" type="button"
-                  :disabled="locBusy || locLoading || (editing && (!locDirty || locIsDate))" @click="applyLoc">
-            <i class="la la-exchange"></i>{{ editing ? $t('editor.locMoveBtn') : $t('common.confirm') }}
-          </button>
-        </div>
       </div>
       <label class="tk-field">
         <span>{{ $t('editor.fieldTitle') }}</span>
@@ -187,6 +152,8 @@ import { Tasks } from '../composables/useTasks.js';
 import { splitSummary, composeSummary, sanitizeTag, isImeKey, INBOX_KEY, PRIORITY_ICON, priorityToLevel, levelToPriorityEmoji } from '../composables/tasks-logic.js';
 import { taskFilePath } from '../api/tasks.js';
 import { LinkFormModal, ConfirmModal } from '../ui/modals.js';
+import { VueModal } from '../ui/VueModal.js';
+import TaskMoveModal from './TaskMoveModal.vue';
 import { openTaskInFile } from '../utils/openTaskInFile.js';
 import SubtaskList from './SubtaskList.vue';
 import TimePicker from './TimePicker.vue';
@@ -237,10 +204,7 @@ export default {
       locListName: '',       // 清单显示名
       groupOptions: [],      // 当前归属文件的 ### 分组（不含未分组）
       rawGroups: [],         // 同上但带任务，用于反查当前任务所在分组
-      locPanel: false,       // 面板是否展开
-      locBusy: false,
-      locLoading: false,
-      locMsg: '',
+      locBusy: false,        // 移动请求进行中（防连点）
       localLists: []         // checklists prop 为空时的兜底清单列表
     };
   },
@@ -255,20 +219,8 @@ export default {
     showLoc() { return !(this.liveTask && this.liveTask.indent > 0); },
     // 归属下拉选项源：优先用父级传入的清单列表，没有时用自己兜底拉取的
     assignLists() { return (this.checklists && this.checklists.length) ? this.checklists : this.localLists; },
-    // 当前归属是日记（只在编辑日记任务时作为「原位」选项出现，选中=不移动）
-    locIsOrigDate() { return this.editing && isDateKey(this.origLocKey); },
-    // 原清单不在清单列表里（文件被删 / 改名后 metadataCache 还没刷新）：仍列出原位，避免下拉空白
-    locKeyOrphan() {
-      if (!this.origLocKey || this.origLocKey === INBOX_KEY || isDateKey(this.origLocKey)) return false;
-      return !this.assignLists.some((x) => x.key === this.origLocKey);
-    },
-    locIsDate() { return isDateKey(this.locKey); },
     // 只有收件箱 / 清单才有 ### 分组可选；「按日期自动」「日记」没有
     locCanPickGroups() { return !!this.locKey && !isDateKey(this.locKey); },
-    // 面板里改了但还没点「移动」（保存时会一并落盘，避免「改了却没生效」）
-    locDirty() {
-      return this.editing && (this.locKey !== this.origLocKey || this.locGroup !== this.origLocGroup);
-    },
     locIcon() {
       if (!this.locKey) return 'la-clock-o';
       if (this.locKey === INBOX_KEY) return 'la-inbox';
@@ -277,7 +229,11 @@ export default {
     },
     // chip 文案：收件箱 / 清单 · 名字 / 日记 · 2026-10-29，后面再接 « › 分组 »
     locChipText() { return this.locBaseText() + (this.locGroup ? ' › ' + this.locGroup : ''); },
-    locTip() { return this.locPath ? this.$t('editor.locTip', { path: this.locPath }) : this.locChipText; },
+    // chip 提示：说明可点 + 真实文件路径
+    locTip() {
+      const tip = this.$t('editor.locMoveTip');
+      return this.locPath ? tip + '\n' + this.$t('editor.locTip', { path: this.locPath }) : tip;
+    },
     // 优先级四档（高 / 中 / 低 / 无，从左到右），图标取自 obsidian-tasks 风格；默认「无」
     priorityOptions() {
       return [
@@ -361,17 +317,16 @@ export default {
       if (!this.locKey) return this.$t('editor.locAuto');
       if (this.locKey === INBOX_KEY) return this.$t('editor.locInbox');
       if (isDateKey(this.locKey)) return this.$t('editor.locDiary', { date: this.locKey });
-      return this.$t('editor.locList', { name: this.locListName || String(this.locKey).replace(/^cl:/, '') });
+      return this.$t('editor.locList', { name: this.locListName || String(this.locKey).replace(/^cl:/, '').split('/').pop() });
     },
     listNameOf(key) {
       if (!key || key === INBOX_KEY || isDateKey(key)) return '';
       const c = this.assignLists.find((x) => x.key === key);
-      return c ? c.name : String(key).replace(/^cl:/, '');
+      // 兜底：清单列表里还没有它（刚建好 / metadataCache 未刷新）时，用路径末段当显示名
+      return c ? c.name : String(key).replace(/^cl:/, '').split('/').pop();
     },
     // 初始化归属：编辑 → 反查当前分组；新建 → 沿用清单视图「分组 +」传入的 createIn
     async initLoc() {
-      this.locPanel = false;
-      this.locMsg = '';
       this.groupOptions = [];
       this.rawGroups = [];
       // checklists prop 为空（如从某处独立打开）时兜底拉一次，避免下拉里没有可选清单
@@ -405,7 +360,6 @@ export default {
     // 读取目标文件的分组（收件箱 / 清单同一套 ### 规则）
     async loadGroupOptions() {
       if (!this.locKey || isDateKey(this.locKey)) { this.groupOptions = []; this.rawGroups = []; return; }
-      this.locLoading = true;
       try {
         const r = this.locKey === INBOX_KEY
           ? await Tasks.loadInboxGroups()
@@ -417,8 +371,6 @@ export default {
       } catch (e) {
         this.rawGroups = [];
         this.groupOptions = [];
-      } finally {
-        this.locLoading = false;
       }
     },
     // 当前任务落在哪个分组（未分组 = ''）
@@ -429,60 +381,57 @@ export default {
       const hit = this.rawGroups.find((g) => (g.tasks || []).some((x) => norm(x.guid) === key));
       return hit ? (hit.title || '') : '';
     },
-    // 清单下拉变化：重置分组并重拉可选分组；选回原位时恢复原分组，避免误移动
-    async onLocChange() {
-      this.locGroup = '';
-      this.groupOptions = [];
-      this.rawGroups = [];
-      this.locPath = this.locKey ? (taskFilePath(this.locKey) || '') : '';
-      this.locListName = this.listNameOf(this.locKey);
-      if (!this.locCanPickGroups) return;
-      await this.loadGroupOptions();
-      if (this.editing && this.locKey === this.origLocKey) this.locGroup = this.origLocGroup;
-    },
-    // 展开 / 收起归属面板：展开时把下拉复位为真实归属，未确认的选择不残留
-    toggleLocPanel() {
-      if (this.locPanel) { this.closeLocPanel(); return; }
-      this.locKey = this.origLocKey;
-      this.locGroup = this.origLocGroup;
-      this.locMsg = '';
-      this.locPanel = true;
-      if (this.locCanPickGroups) this.loadGroupOptions();
-    },
-    closeLocPanel() {
-      this.locPanel = false;
-      this.locKey = this.origLocKey;
-      this.locGroup = this.origLocGroup;
-    },
-    // 面板主按钮：编辑态立即移动（后续保存写新位置）；新建态只确认目标（保存时直接建过去）
-    async applyLoc() {
-      // 连点「移动 / 保存」时不重复发起移动（上一次还没落盘）
+    // 点 chip：打开「移动任务 / 设置保存位置」小弹窗（不占主弹窗高度，也不挤压保存按钮）
+    openMoveModal() {
       if (this.locBusy) return;
-      if (!this.editing) { this.locPanel = false; return; }
-      if (!this.locDirty || !this.locKey || isDateKey(this.locKey)) { this.locPanel = false; return; }
+      new VueModal(this.plugin.app, TaskMoveModal, {
+        open: true,
+        editing: this.editing,
+        lists: this.assignLists,
+        currentKey: this.locKey,
+        currentGroup: this.locGroup,
+        currentName: this.locChipText,
+        onConfirm: (target) => this.applyLoc(target)
+      }).open();
+    },
+    // 应用归属：编辑态立即移动并落盘（抛错由移动弹窗展示）；新建态只记录目标，保存时直接创建
+    async applyLoc(target) {
+      const key = (target && target.key) || '';
+      const group = (target && target.group) || '';
+      if (!this.editing) {
+        this.locKey = key;
+        this.locGroup = group;
+        this.locPath = key ? (taskFilePath(key) || '') : '';
+        this.locListName = this.listNameOf(key);
+        return;
+      }
+      // 连点「移动」时不重复发起（上一次还没落盘）
+      if (this.locBusy) return;
+      if (!key || isDateKey(key)) return;
+      if (key === this.origLocKey && group === this.origLocGroup) return;
       this.locBusy = true;
       this.error = '';
       try {
         // keepDate：改「归属」不应该顺手清掉日期；日记任务的日期会被物化成行内标记
-        const r = await Tasks.moveTaskToGroup(this.liveTask.guid, this.locKey, this.locGroup || '', { keepDate: true });
+        const r = await Tasks.moveTaskToGroup(this.liveTask.guid, key, group, { keepDate: true });
         const nt = (r && r.task) || {};
         this.liveTask = Object.assign({}, this.liveTask, nt, {
           guid: nt.guid || this.liveTask.guid,
-          date: this.locKey,
-          file: nt.file || taskFilePath(this.locKey) || this.liveTask.file
+          date: key,
+          file: nt.file || taskFilePath(key) || this.liveTask.file
         });
         this.form.guid = this.liveTask.guid;
-        this.origLocKey = this.locKey;
-        this.origLocGroup = this.locGroup;
+        this.locKey = key;
+        this.locGroup = group;
+        this.origLocKey = key;
+        this.origLocGroup = group;
         this.locPath = this.liveTask.file || '';
-        this.locListName = this.listNameOf(this.locKey);
-        this.locMsg = this.$t('editor.movedTo', { name: this.locChipText });
-        this.locPanel = false;
+        this.locListName = this.listNameOf(key);
         // 通知父级刷新清单统计 / 当前视图（任务可能已经不在原来的清单里）
         this.$emit('moved');
       } catch (e) {
-        const reason = e && e.reason;
-        this.error = this.$t('editor.moveFail') + (reason || (e && e.message) || e);
+        // 抛给移动弹窗：留在弹窗里展示失败原因，弹窗不关、位置不变
+        throw e;
       } finally {
         this.locBusy = false;
       }
@@ -579,11 +528,6 @@ export default {
           && this.toMin(this.form.dueEnd) <= this.toMin(this.form.dueStart)) {
         this.error = this.$t('editor.endAfterStart');
         return;
-      }
-      // 归属面板里改了但没点「移动」：保存时一并落盘（失败则中止保存，避免内容与新位置不一致）
-      if (this.editing && this.locDirty) {
-        await this.applyLoc();
-        if (this.locDirty) return;
       }
       this.saving = true; this.error = '';
       const { dueAt, dueEndAt, startAt } = this.buildDueAt();
@@ -797,26 +741,15 @@ export default {
   transition: background .15s ease, color .15s ease;
 }
 .tk-link-edit:hover { background: var(--gold-bg); color: var(--gold); }
-/* ---------- 头部：所在清单 chip + 归属面板 ---------- */
+/* ---------- 头部：所在清单 chip（点击打开移动弹窗） ---------- */
 .tk-loc-chip {
-  flex: none; max-width: 168px; display: inline-flex; align-items: center; gap: 5px;
+  flex: none; max-width: 220px; display: inline-flex; align-items: center; gap: 5px;
   padding: 4px 9px; border-radius: 999px; cursor: pointer;
   background: transparent; border: 1px solid var(--line); color: var(--ink-soft);
   font-size: 12px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   transition: background .15s ease, color .15s ease, border-color .15s ease;
 }
-.tk-loc-chip:hover, .tk-loc-chip.on { background: var(--gold-bg); border-color: var(--gold); color: var(--ink); }
+.tk-loc-chip:hover { background: var(--gold-bg); border-color: var(--gold); color: var(--ink); }
 .tk-loc-chip i { flex: none; font-size: 12px; color: var(--gold); }
-/* 移动按钮处于展开态时也给个高亮，和 chip 状态一致 */
-.tk-modal-head .btn-icon.on { background: var(--gold-bg); color: var(--gold); }
-.tk-loc-panel {
-  margin: -6px 0 16px; padding: 12px 12px 10px;
-  border: 1px solid var(--line); border-radius: 12px;
-  background: var(--background-modifier-hover);
-}
-.tk-loc-row { display: flex; gap: 10px; }
-.tk-loc-row .tk-field { flex: 1 1 0; min-width: 0; margin-bottom: 0; }
-.tk-loc-ops { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-.tk-loc-ops .spacer { flex: 1; }
-.tk-loc-msg { display: inline-flex; align-items: center; gap: 5px; color: var(--c-done); font-size: 12px; }
+.tk-loc-caret { font-size: 10px !important; opacity: .65; margin-left: 1px; }
 </style>
