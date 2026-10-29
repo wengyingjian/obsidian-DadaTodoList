@@ -215,8 +215,6 @@
     "locList": "清單 · {{name}}",
     "locDiary": "日記 · {{date}}",
     "locMoveBtn": "移動",
-    "moveTitle": "移動任務",
-    "moveTitleNew": "設定儲存位置",
     "moveCurrent": "目前：{{name}}",
     "moveFail": "移動失敗：",
     "locTip": "所在檔案：{{path}}",

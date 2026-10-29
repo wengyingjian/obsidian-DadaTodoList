@@ -215,8 +215,6 @@
     "locList": "List · {{name}}",
     "locDiary": "Journal · {{date}}",
     "locMoveBtn": "Move",
-    "moveTitle": "Move task",
-    "moveTitleNew": "Where to save",
     "moveCurrent": "Currently: {{name}}",
     "moveFail": "Failed to move: ",
     "locTip": "File: {{path}}",
