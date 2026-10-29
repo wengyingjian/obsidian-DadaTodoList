@@ -430,9 +430,12 @@ export default {
         defaultDate,
         defaultTime,
         defaultPriority,
+        // 清单列表：编辑器「归属」下拉直接复用，免去每次开弹窗重复读盘
+        checklists: this.checklists,
         plugin: this.plugin,
         onSaved: () => this.onSaved(),
         onDeleted: (guid) => this.onDeleted(guid),
+        onMoved: () => this.onSaved(),
         onSubtasksChanged: () => this.reload()
       }).open();
     },

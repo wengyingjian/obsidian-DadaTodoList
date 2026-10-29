@@ -393,16 +393,26 @@ export default {
     openEditor(task, defaultDate) {
       new VueModal(this.plugin.app, TaskEditorModal, {
         open: true, task, defaultDate, plugin: this.plugin,
-        onSaved: () => this.loadGroups(this.activeKey),
-        onDeleted: () => this.loadGroups(this.activeKey),
+        // 清单列表：编辑器「归属」下拉复用，任务可从这里直接移到别的清单 / 分组
+        checklists: this.lists,
+        onSaved: () => this.afterMutate(),
+        onDeleted: () => this.afterMutate(),
+        onMoved: () => this.afterMutate(),
         onSubtasksChanged: () => this.loadGroups(this.activeKey)
       }).open();
+    },
+    // 任务归属/内容变更后的刷新：任务可能已被移出当前清单，右区要重读，左区计数交父级重载
+    afterMutate() {
+      this.$emit('reload');
+      if (this.activeKey) this.loadGroups(this.activeKey);
     },
     // 分组内新建：弹 TaskEditorModal（create 模式），保存时追加到该分组最后一行
     openAdd(g) {
       new VueModal(this.plugin.app, TaskEditorModal, {
         open: true, task: null, defaultDate: '', plugin: this.plugin,
         createIn: { list: this.activeKey, group: g.title || '' },
+        checklists: this.lists,
+        onMoved: () => this.afterMutate(),
         onSaved: () => this.loadGroups(this.activeKey),
         onDeleted: () => this.loadGroups(this.activeKey),
         onSubtasksChanged: () => this.loadGroups(this.activeKey)

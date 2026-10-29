@@ -73,6 +73,7 @@ tags:
 - Each group has a **+ button** to add tasks; the sidebar shows live total / done progress per checklist
 - The eye toggle ("hide done") also folds checklists that have **no pending tasks** into a hint line at the bottom of the sidebar ("N hidden · Show all"); empty checklists are never folded so they can take their first task
 - The **+ button** at the right of the "Checklist" list header creates a new checklist from just a name — it is saved to the `清单` folder at the vault root by default (configurable via the "Checklist folder" setting); a new empty checklist can take its first task via the + next to "Checklist is empty"
+- The task editor shows the task's **current checklist / group** as a chip beside the title; the button to its left moves the task to the inbox or another checklist (with an optional group) while keeping its dates — organizing inbox items no longer requires dragging
 
 ### Data access disclosure
 

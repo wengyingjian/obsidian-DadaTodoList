@@ -620,14 +620,15 @@ export async function createTask(task) {
   return res(201, { ok: true, task: toRecord(dateKey, Object.assign({}, node, { lineNo }), { file: path }) });
 }
 
-// 在清单指定分组的最后一行追加任务。
+// 在清单 / 收件箱指定分组的最后一行追加任务。
 // groupTitle 为空串 → 未分组（追加到首个 ### 之前；无 ### 则文件末尾）；
 // 否则定位 ### groupTitle 标题，插入到下一个 ### 之前（无下一个 ### 则文件末尾）。
 export async function createChecklistTask(listKey, groupTitle, task) {
   noteSelfWrite();
   const t = task || {};
   if (!String(t.summary || '').trim()) return res(400, { ok: false, reason: 'missing_summary' });
-  if (!isListKey(listKey)) return res(400, { ok: false, reason: 'bad_list' });
+  // 收件箱与清单共用此入口：编辑弹窗的「归属」可以直接把新任务建到收件箱的指定分组
+  if (!isListKey(listKey) && listKey !== INBOX_KEY) return res(400, { ok: false, reason: 'bad_list' });
   const path = taskFilePath(listKey);
   if (!path) return res(400, { ok: false, reason: 'bad_list' });
   await ensureTaskFile(listKey, path);
@@ -661,10 +662,13 @@ export async function createChecklistTask(listKey, groupTitle, task) {
 }
 
 // 把任务整块移动到目标文件（收件箱或清单）的指定 ### 分组末尾。
-// 跨文件时同步清空日期标记，落到「无日期待办」语义（与拖回待办池的行为一致）。
+// 默认（拖拽语义）跨文件时清空日期标记，落到「无日期待办」（与拖回待办池的行为一致）。
+// opts.keepDate=true 时跨文件保留日期（编辑弹窗改「归属」用）：日记任务的日期原本由文件名
+// 承载，会物化成行内 🛫/📅，否则搬进清单后会变成无日期任务。
 // 分组不存在时在写任何文件之前返回 404，避免源任务已被删而目标落空。
-export async function moveTaskToGroup(guid, targetKey, groupTitle) {
+export async function moveTaskToGroup(guid, targetKey, groupTitle, opts) {
   noteSelfWrite();
+  const keepDate = !!(opts && opts.keepDate);
   const g = parseGuid(guid);
   if (!g) return res(400, { ok: false, reason: 'bad_guid' });
   if (targetKey !== INBOX_KEY && !isListKey(targetKey)) return res(400, { ok: false, reason: 'bad_list' });
@@ -708,18 +712,28 @@ export async function moveTaskToGroup(guid, targetKey, groupTitle) {
   // 目标位置前若只有空行，回退到最后一个非空行之后：避免任务与同组内容被空行隔开
   while (insertAt > 0 && !dstLines[insertAt - 1].trim()) insertAt--;
 
-  // 跨文件：清掉日期标记，使任务在目标文件里表现为「无日期」
   if (!sameFile) {
-    node.due = '';
-    node.start = '';
-    node.time = '';
-    node.timeEnd = '';
+    const srcIsDated = !(g.dateKey === INBOX_KEY || isListKey(g.dateKey));
+    if (keepDate) {
+      // 日记 → 收件箱/清单：把文件名里隐含的日期物化为行内标记，保住「哪天」这个信息
+      if (srcIsDated) {
+        if (node.due) { if (!node.start) node.start = g.dateKey; } // 跨日期：补上开始日
+        else node.due = g.dateKey;                                  // 单日：写成 📅
+      }
+    } else {
+      // 拖拽语义：跨文件即落到「无日期待办」
+      node.due = '';
+      node.start = '';
+      node.time = '';
+      node.timeEnd = '';
+    }
   }
 
   dstLines.splice(insertAt, 0, ...serializeBlock(node, node.indentStr || ''));
   if (!sameFile) await writeTasks(srcPath, src.head, src.lines.filter((_, i) => !removed.has(i)));
   await writeTasks(dstPath, dstHead, dstLines);
-  return res(200, { ok: true, task: toRecord(targetKey, Object.assign({}, node, { lineNo: insertAt })) });
+  // 带上 file：编辑弹窗移动后 chip /「打开源文件」按新路径定位
+  return res(200, { ok: true, task: toRecord(targetKey, Object.assign({}, node, { lineNo: insertAt }), { file: dstPath }) });
 }
 
 // 将清单内任务移动到另一个分组（同文件内移动整块：删旧块 + 插入到目标分组末尾）。

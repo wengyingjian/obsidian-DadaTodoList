@@ -65,9 +65,10 @@ const api = {
   async listSubtasks(parentGuid) { return (await unwrap(listSubtasks(parentGuid))).items || []; },
   async createSubtask(parentGuid, task) { return (await unwrap(createSubtask(parentGuid, task))).task; },
   async moveChecklistTask(listKey, guid, targetGroupTitle) { return await unwrap(moveChecklistTask(listKey, guid, targetGroupTitle)); },
-  // 移动到指定文件的分组（收件箱 / 清单通用；跨文件时清日期，落到无日期待办）
-  async moveTaskToGroup(guid, targetKey, targetGroupTitle) {
-    return await unwrap(moveTaskToGroup(guid, targetKey, targetGroupTitle));
+  // 移动到指定文件的分组（收件箱 / 清单通用）。opts.keepDate=true 时跨文件保留日期
+  // （编辑弹窗改「归属」用）；不传则维持拖拽语义：跨文件落到无日期待办。
+  async moveTaskToGroup(guid, targetKey, targetGroupTitle, opts) {
+    return await unwrap(moveTaskToGroup(guid, targetKey, targetGroupTitle, opts));
   }
 };
 
