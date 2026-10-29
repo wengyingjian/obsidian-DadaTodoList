@@ -134,7 +134,7 @@ import { Tasks } from '../../composables/useTasks.js';
 import { taskFilePath } from '../../api/tasks.js';
 import { statusIcon, dateText, timeText, richSummaryNoTags } from '../../composables/tasks-logic.js';
 import { VueModal } from '../../ui/VueModal.js';
-import { ChecklistFormModal } from '../../ui/modals.js';
+import ChecklistEditorModal from '../ChecklistEditorModal.vue';
 import TaskEditorModal from '../TaskEditorModal.vue';
 import { openTaskInFile } from '../../utils/openTaskInFile.js';
 import { openCtxMenu } from '../../composables/useTaskCtxMenu.js';
@@ -248,39 +248,29 @@ export default {
     pct(c) { return c.total ? Math.round((c.done / c.total) * 100) : 0; },
     // 与 loadChecklists() 同一排序（中文按拼音）：新建的清单落位与下次全量刷新后一致
     byName(a, b) { return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hans-CN'); },
-    // 新建清单：只要名称 → 落盘成功后乐观插入左侧列表并选中，再请父级重载对齐
+    // 新建清单：弹窗与「新建任务」共用同一套外壳与原语（VueModal + tk-mask/tk-modal/tk-field/btn）
     openNewChecklist() {
-      new ChecklistFormModal(this.plugin.app, {
-        onSubmit: async (name) => {
-          let item;
-          try {
-            item = await Tasks.createChecklist(name);
-          } catch (e) {
-            // 把 API 的 reason 翻成可读提示；弹窗收到 throw 会提示并保持打开
-            const reason = e && e.reason;
-            if (reason === 'exists') throw new Error(this.$t('app.clExists', { name }));
-            if (reason === 'exists_other') throw new Error(this.$t('app.clExistsOther', { name }));
-            if (reason === 'bad_folder') throw new Error(this.$t('app.clBadFolder'));
-            if (reason === 'bad_name') throw new Error(this.$t('app.clNameInvalid'));
-            if (reason === 'missing_name') throw new Error(this.$t('app.clNameRequired'));
-            throw new Error(this.$t('app.clCreateFail') + (reason || (e && e.message) || e));
-          }
-          this.pendingKey = item.key;
-          this.pendingItem = item;
-          this.pendingAt = Date.now();
-          const merged = this.lists.slice();
-          if (!merged.some((x) => x.key === item.key)) merged.push(item);
-          merged.sort((a, b) => this.byName(a, b));
-          this.lists = merged;
-          await this.selectList(item.key); // 文件已落盘，读到的是空分组 → 右侧显示「清单为空」
-          this.$emit('reload');
-          // frontmatter 解析稍晚才进 metadataCache：分两次延后重载（600ms / 1600ms）。
-          // 1600ms 那次兜住「首次 changed 事件落在 api 自写静默窗口内被跳过」的情况。
-          this._reloadTimers = (this._reloadTimers || []).concat([600, 1600].map((ms) => setTimeout(() => {
-            if (this.pendingKey) this.$emit('reload');
-          }, ms)));
-        }
+      new VueModal(this.plugin.app, ChecklistEditorModal, {
+        open: true,
+        onSaved: (item) => this.onChecklistCreated(item)
       }).open();
+    },
+    // 新建清单落地后的视图侧收尾：乐观插入并选中 → 请父级重载列表 → 两次延后对齐元数据缓存
+    async onChecklistCreated(item) {
+      this.pendingKey = item.key;
+      this.pendingItem = item;
+      this.pendingAt = Date.now();
+      const merged = this.lists.slice();
+      if (!merged.some((x) => x.key === item.key)) merged.push(item);
+      merged.sort((a, b) => this.byName(a, b));
+      this.lists = merged;
+      await this.selectList(item.key); // 文件已落盘，读到的是空分组 → 右侧显示「清单为空」
+      this.$emit('reload');
+      // frontmatter 解析稍晚才进 metadataCache：分两次延后重载（600ms / 1600ms）。
+      // 1600ms 那次兜住「首次 changed 事件落在 api 自写静默窗口内被跳过」的情况。
+      this._reloadTimers = (this._reloadTimers || []).concat([600, 1600].map((ms) => setTimeout(() => {
+        if (this.pendingKey) this.$emit('reload');
+      }, ms)));
     },
     gKey(g) { return g.title || '___ungrouped'; },
     firstLine(s) { return String(s || '').split(/\r?\n/)[0]; },

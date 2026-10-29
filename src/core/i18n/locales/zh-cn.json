@@ -135,6 +135,7 @@
     "clExistsOther": "库中已有同名清单：{{name}}，请换个名称",
     "clBadFolder": "「清单文件夹」设置不可用（不能包含 . 或 ..），请到设置里改为库内文件夹",
     "clCreateFail": "新建清单失败：",
+    "clCreating": "创建中…",
     "loadChecklistFail": "读取清单失败：",
     "postponeTitle": "顺延至今天",
     "postponeMsg": "当前列表中所有已过期任务（{{n}} 项）将被顺延至今天。",

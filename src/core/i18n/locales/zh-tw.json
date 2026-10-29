@@ -135,6 +135,7 @@
     "clExistsOther": "庫中已有同名清單：{{name}}，請換個名稱",
     "clBadFolder": "「清單資料夾」設定不可用（不能包含 . 或 ..），請到設定裡改為庫內資料夾",
     "clCreateFail": "新增清單失敗：",
+    "clCreating": "建立中…",
     "loadChecklistFail": "讀取清單失敗：",
     "postponeTitle": "順延至今天",
     "postponeMsg": "當前列表中所有已過期任務（{{n}} 項）將被順延至今天。",

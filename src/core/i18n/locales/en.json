@@ -135,6 +135,7 @@
     "clExistsOther": "A checklist named {{name}} already exists elsewhere in the vault — please pick another name",
     "clBadFolder": "The checklist folder setting is invalid (it cannot contain '.' or '..'). Please set it to a folder inside the vault.",
     "clCreateFail": "Failed to create checklist: ",
+    "clCreating": "Creating…",
     "loadChecklistFail": "Failed to load checklist: ",
     "postponeTitle": "Postpone to today",
     "postponeMsg": "All {{n}} overdue tasks in this list will be moved to today.",
